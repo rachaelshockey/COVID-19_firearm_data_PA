@@ -1,0 +1,446 @@
+---
+title: "Analysis of Firearm Sales, Seizures, and Background Check Requests in 2020"
+author: "Rachael Shockey - DAT-204 Fall 2020"
+date: "December 10, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(stringr)
+library(ggplot2)
+library(tidyr)
+library(RColorBrewer)
+```
+
+## Introduction and Hypotheses
+
+Since March 2020, people in the U.S. have been purchasing firearms--and requesting federal background checks to purchase firearms--at unprecedented rates. For this project, I looked at firearm-related data for Pittsburgh and the entire state of Pennsylvania to explore the following questions:
+
+* During which month in 2020 have we seen the highest rate of firearm background checks initiated in Pennsylvania?
+* At the state level, how do the increased rates of firearm background checks per month (since March) compare to those rates over the last five years?
+* With the nationwide increase in firearm _sales_, has there also been a local increase in firearm _seizures_ by the Pittsburgh Bureau of Police?
+
+To answer these questions, I looked at statewide data on federal background checks initiated from March through September 2020 (available through the FBI website), as well as firearm seizures made by the Pittsburgh Bureau of Police in the same timeframe (available through the Western PA Regional Data Center). 
+
+I predicted that I'd find higher rates of background checks initiated each month from March through November 2020 compared to the same timeframe in preceding years, with multiple peaks between spring and fall 2020 (the highest peak being in March). I also predicted that--due to court closures, hearing delays, and shifts in policing activities and priorities related to the pandemic--firearm seizures had taken a dip in this timeframe compared to the five preceding years.
+
+## Context 
+
+In 1993, the Brady Handgun Violence Prevention Act mandated federal background checks on all firearm purchasers. As a result of the passing of the Brady Act, the [National Instant Criminal Background Check System](https://www.fbi.gov/services/cjis/nics/about-nics) (NICS) was established in 1998. Today, NICS is operated by the FBI and is used to determine if individuals are eligible to purchase firearms. 
+
+I was interested in looking at NICS data for 2020 because I know that there have been multiple spikes in firearm sales this year. [NICS maintains a list](https://www.fbi.gov/file-repository/nics_firearm_checks_top_10_highest_days_weeks.pdf/view) of the top 10 days and weeks since 1998 when the highest numbers of background checks were initiated nationally. Right now, the top 2 weeks on this list are both in spring 2020: 3/16/2020-3/22/2020 and 6/1/2020-6/7/2020.
+
+While NICS data on firearm background checks gives us a sense of what rates of firearm sales are like month to month, it's important to recognize that the numbers represented in NICS datasets only represent _background checks_, not actual firearm purchases. The disclaimer on the NICS website states that "a one-to-one correlation cannot be made between a firearm background check and a firearm sale."
+
+## Part 1 of Analysis: Background Check Data
+
+NICS publishes statistical reports on the federal background checks processed by state, month, year, and firearm type. The reports are only available as PDFs on its website. In BuzzFeed News' open-source data projects on GitHub, [there is a repository](https://github.com/BuzzFeedNews/nics-firearm-background-checks) with code that downloads the most up-to-date version of the PDF from NICS, parses the data, and outputs it to a csv. I used this code to download the dataset as a csv, and I checked the csv against the NICS PDF dataset to ensure that the data was accurate. 
+
+```{r include=FALSE}
+############ IMPORTING AND FILTERING PENNSYLVANIA BACKGROUND CHECK DATA #######################
+
+nics <- read.csv("nics-firearm-background-checks.csv", stringsAsFactors = FALSE)
+# import federal background check dataset, which is available through the FBI's 
+# website as a PDF and is parsed into this csv by BuzzFeed News in a program 
+# available on GitHub: https://github.com/BuzzFeedNews/nics-firearm-background-checks
+
+```
+```{r}
+
+# this section does some data cleaning on the NICS dataset
+
+filter_nics_df <- function() {
+  nics_df_filtered <- separate(nics, col = month, into = c( "Year", "Month"), sep="-")
+  # this little video tutorial helped me figure out an easy way to split the year-month
+  # column in this dataset using the tidyr library: https://www.youtube.com/watch?v=E7kbJFxocvU
+  nics_df_filtered$Year <- as.numeric(nics_df_filtered$Year)
+  nics_df_filtered$Month <- as.numeric(nics_df_filtered$Month)
+  # after splitting the 'month' column into to new columns, I discovered that R was reading 
+  # the data in both of these columns as character types rather than numbers
+  nics_df_filtered <- nics_df_filtered[nics_df_filtered$state == "Pennsylvania" & 
+                                    nics_df_filtered$Year > 2014 & nics_df_filtered$Month > 2 & 
+                                      nics_df_filtered$Month < 12,]
+  # use subsetting and stringr to filter out all of the data from the NICS dataset that we
+  # don't need. We only want to look at the rows of data for the state of PA during COVID
+  # months in 2020 and the comparable timeframe in the previous 5 years (March-November, 2015-2020)
+  return(nics_df_filtered)
+}
+
+nics_df <- filter_nics_df()
+
+# nics_df is now a dataframe of monthly firearm background checks for the state of Pennsylvania that covers March through November 2020 as well as the same timeframe in the five preceding years for comparison.
+
+```
+
+```{r include=FALSE}
+#################### ANALYZING NICS DATA #####################################
+
+```
+```{r}
+
+nics_monthly_stats <- function(stat_func) {
+  # set up a function that will run statistical functions on the "totals" column
+  # of the nics_df by year
+  stats <- aggregate(totals ~ Year, nics_df, stat_func)
+  # use the aggregate function to run stats on the total monthly firearms seized 
+  # by year, using a statistical function supplied by the user as a parameter
+  return(stats)
+  # print the calculated stats tables based on user input
+}
+
+# Summary statistics for PA's monthly background checks by year:
+
+nics_monthly_stats(summary)
+```
+The table above is the output of a `nics_monthly_stats` function, which uses the `aggregate` function to 1) group the total background checks initiated by month and year and 2) run statistics on those totals. These are summary statistics for total NICS background checks initiated in PA per month for each year since 2015. Out of all years represented, 2020 has the highest values for every category, including the minimum number of background checks initiated per month. The year with the second-highest values overall is 2016, which, like 2020, was a presidential election year. 
+
+Something else that sets 2020 apart from other years is that, while all other years have a higher mean value than median, 2020 has a noticeably higher median, indicating that the distribution of data for this year is skewed left. 
+```{r}
+# Variance calculations for PA's monthly background checks by year:
+
+nics_monthly_stats(var)
+```
+
+These are the variance calculations for total NICS background checks initiated in PA per month for each year since 2015. The year 2020 has a much higher level of variance than previous years, suggesting that there are values farther from the mean in 2020 than in other years. 
+
+```{r}
+# Standard deviation calculations for PA's monthly background checks by year:
+
+nics_monthly_stats(sd)
+
+```
+These are the standard deviation calculations for total NICS background checks initiated in PA per month for each year since 2015. The higher standard deviation for 2020 suggests that the data for this year is more spread out. 
+
+```{r include=FALSE}
+nics_anova <- aov(totals ~ as.factor(Year), data = nics_df)
+# I followed this video tutorial to calculate ANOVA for PA background checks by 
+# year: https://www.youtube.com/watch?v=fT2No3Io72g
+
+```
+```{r}
+summary(nics_anova)
+```
+
+F(5,48) = 10.35, p<.05
+
+The code above calculates the analysis of variance (ANOVA) between the mean number of background checks initiated per month in PA in each year from 2015 to 2020. Since the p-value is less than .05, we reject the null hypothesis that the variance of monthly background checks between years is basically equal. There is statistically significant variance in the mean number of monthly background checks for each year since 2015. 
+
+```{r include=FALSE}
+
+#################### VISUALIZING NICS DATA #############################
+
+# Below is a function that further filters the background check dataframe by a given year. Can be plugged into the bar plot  to quickly plot monthly background checks for Pennsylvania for any year from 2015 to 2020.
+nics_by_year <- function(search_yr) {
+  years <- unique(nics_df$Year)
+  # create a vector that includes each unique year represented in the dataframe 
+  for (year in years) {
+  # for each unique year in the vector created above, loop through the larger dataframe
+  # once, grabbing all rows where the year = a given year entered by the user as a function parameter
+    if (year == search_yr) {
+      year_tf <- c(nics_df$Year == search_yr)
+      year_df <- nics_df[year_tf, ]
+      # apply the newly created true-false vector to the larger PA dataframe and
+      # return the new dataframe of all entries from just one year.
+      keep_columns <- c("Month", "Year", "totals")
+      year_df <- year_df[keep_columns]
+      # remove all unnecessary columns for easier viewing and analysis 
+      # (source: https://www.listendata.com/2015/06/r-keep-drop-columns-from-data-frame.html)
+      return(year_df)
+    }
+  }
+}
+
+```
+```{r include=FALSE}
+nics_barplot_2020 <- ggplot(nics_by_year(2020), aes(x=as.factor(Month), y=totals, fill=as.factor(totals))) +
+  geom_bar(color="black", stat = 'identity') +
+  labs(title = "Total Background Checks for Pennsylvania by Month
+(March - November 2020)",  
+       x = "Month in 2020", 
+       y = "Total Background Checks") +
+  theme(plot.title = element_text(size = 16, face = "bold"),
+        axis.text.x = element_text(size = 12),
+        axis.title.x = element_text(size = 14),
+        axis.text.y = element_text(size = 12),
+        axis.title.y = element_text(size = 14), 
+        panel.background = element_rect(fill = "white")) 
+nics_barplot_2020 <- nics_barplot_2020 + scale_fill_manual(values = c("#999999", "#E69F00", "#56B4E9", 
+              "#000000", "#009E73", "#D55E00", "#F0E442", "#0072B2", "#CC79A7"))
+# I used a colorblind-friendly palette in all visualizations for this project, which available at this link: http://www.cookbook-r.com/Graphs/Colors_(ggplot2)/#a-colorblind-friendly-palette
+# and this video tutorial really helped me figure out how to adjust colors for various different types of plots: https://www.youtube.com/watch?v=vUdq5z4XjDs
+```
+```{r fig.width=8}
+nics_barplot_2020
+```
+
+This plot of the background check dataset shows the total number of federal background checks for PA in each month between March and November 2020. The biggest month for background checks was June, when PA moved into its "green phase" of social distancing guidelines related to the pandemic. Nationally, background checks surged in June, [immediately following the initial Black Lives Matter protests in response to the murders of Breonna Taylor and George Floyd](https://www.npr.org/sections/live-updates-protests-for-racial-justice/2020/07/02/886545589/amid-virus-fears-and-protests-firearm-background-checks-hit-all-time-high). 
+
+```{r include=FALSE}
+
+nics_boxplot <- ggplot(nics_df, aes(x=as.factor(Year), y=totals, fill=as.factor(Year))) +
+  geom_boxplot() +
+  labs(x="Year", y="Total Monthly Background Checks", title = 
+         "Total Monthly NICS Background Checks for Pennsylvania 
+(March-November Timeframe, 2015-2020)") +
+  theme(plot.title = element_text(size = 16, face = "bold"),
+        axis.text.x = element_text(size = 12),
+        axis.title.x = element_text(size = 14),
+        axis.text.y = element_text(size = 12),
+        axis.title.y = element_text(size = 14)) 
+nics_boxplot <- nics_boxplot + scale_fill_manual(values = c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#CC79A7"))
+
+```
+```{r fig.width=8}
+nics_boxplot
+```
+
+This boxplot demonstrates that PA's median federal background checks processed per month for the 2020 timeframe is higher than even the outliers in all five preceding years. The 2020 boxplot also has two extreme outliers on the low end, representing April and May, which are both very close to the median values for monthly background checks in the previous four years. NICS' all-time record for the highest number of background checks initiated in a month has already been broken _multiple times_ in 2020, and this visualization helps to demonstrate how stark the difference is between 2020 and preceding years. 
+
+Historically, NICS has seen increases in background check requests during election years, so here is one more visualization comparing background check rates for PA in 2020 versus 2016. NICS had a record-breaking month in October 2016, in the lead-up to the presidential election...
+
+```{r include=FALSE}
+nics_election_years <- ggplot(nics_df[nics_df$Year == 2016 | nics_df$Year == 2020,], 
+                        # subset the data to remove all years except 2016 and 2020
+                       aes(x=as.factor(Month), y=totals, fill=as.factor(Year))) +
+  geom_bar(color="black", stat = 'identity') +
+  labs(title = "Total Background Checks for Pennsylvania by Month in Election Years
+(March - November Timeframe, 2016 versus 2020)",  
+       x = "Month", 
+       y = "Total Background Checks") +
+  theme(plot.title = element_text(size = 16, face = "bold"),
+        axis.text.x = element_text(size = 12),
+        axis.title.x = element_text(size = 14),
+        axis.text.y = element_text(size = 12),
+        axis.title.y = element_text(size = 14), 
+        panel.background = element_rect(fill = "white")) 
+
+nics_election_years <- nics_election_years + scale_fill_manual(values = c("#E69F00", "#56B4E9"))
+```
+```{r fig.width=10}
+
+nics_election_years
+
+```
+
+## Part 2 of Analysis: Pittsburgh Police Firearm Seizures
+
+The next dataset will help us figure out whether or not there's been a significant change in the number of firearms seized in Pittsburgh, while firearm sales have surged both statewide and nationwide. 
+
+The Western PA Regional Data Center publishes a dataset of [all firearm seizures by Pittsburgh Police](https://data.wprdc.org/dataset/pbp-fire-arm-seizures). It is updated multiple times per month. As of this week, data is available through the end of October 2020. One row represents one case (and in some cases, multiple firearms are seized).
+
+WPRDC provides the following explanation of the police activities tracked by this dataset:
+
+> Firearm seizures can occur for several reasons. One of the Bureau of Police justifications for seizing a firearm involves a suspicion that a firearm was used in a criminal offense. Seizures may also occur to protect officer or public safety. For example, a weapon held by someone involved in a serious medical emergency, or an unattended weapon found in a public 
+space may be seized and held for safekeeping.
+
+The dataset does _not_ include information about the crimes or justifications connected with the firearm seizures. It only tells us the date and location of each firearm seizure as well as the total count and types of firearms seized per instance. 
+
+```{r include=FALSE}
+########### IMPORTING AND FILTERING PITTSBURGH FIREARM SEIZURE DATA ###########################
+
+firearms <- read.csv("pbp_firearm_seizures.csv", stringsAsFactors = FALSE)
+# import Pittsburgh firearm seizures dataset, which has seizure data from January 2015 through October 2020
+
+filter_firearm_df <- function() {
+  firearm_seizure_years <- unique(firearms$year)
+  # get all unique years represented in the dataset and assign years to a vector
+  timeframe_tf <- firearms$month > 2 & firearms$month < 11
+  # create a true-false vector that contains only the rows of the firearm dataset
+  # for the months needed for this analysis (March - November). Since COVID-related 
+  # shutdowns in Pittsburgh began in March, we want to filter out January and 
+  # February data. We also want to filter out November-December since there is 
+  # only 2020 available through October. So, we will look at the same 8-month 
+  # timeframe for all 6 years. 
+  firearm_df <- firearms[timeframe_tf, ]
+  # apply the timeframe true-false vector to the datafame to complete the filtering
+  firearm_df$year <- as.factor(firearm_df$year)
+  # coerce the year category so that R treats year as a factor rather than as an 
+  # integer. this will make it possible to use year as categorical data in plots.
+  return(firearm_df)
+}
+
+firearm_df <- filter_firearm_df()
+# run the above function and store it as our new dataframe
+```
+```{r include=FALSE}
+
+#################### ANALYZING FIREARM SEIZURE DATA ###############################
+
+firearms_seized_by_year <- function() {
+  firearm_seizure_years <- unique(firearm_df$year)
+  # set up a vector that holds each unique year included in the filtered dataframe created above
+  seized_each_year <- vector()
+  # create an empty vector that will later hold the function's output
+  for (i in 1:length(firearm_seizure_years)) {
+    sum_by_year <- sum(firearm_df$total_count[firearm_df$year == firearm_seizure_years[i]])
+    # loop through each unique year in the vector of years created above, then returning the sum of the values in      the total_count column for that year
+    # you can probably tell that this function is modeled after the for loop we used to look at avocados!
+    seized_each_year <- c(seized_each_year, sum_by_year)
+    # concatenate the summed results to the empty vector
+  }
+  names(seized_each_year) <- firearm_seizure_years
+  # add labels to each column of the new table
+  return(seized_each_year)
+}
+
+```
+```{r}
+
+firearms_seized_by_year()
+
+```
+
+Based on the table above, it looks like the total firearms seized between March and October 2020 is comparable to the totals seized in the same timeframe from 2015-2019, and there's been an increase in the total firearms seized in 2020 compared to the last two years. The next section will look at rates of firearm seizures from month to month.
+
+```{r}
+
+seizures_by_month_and_year <- aggregate(total_count~month+year, firearm_df, sum)
+# recycling a line of code from the firearm_monthly_stats function to get the firearms
+# seized by month for plotting. 
+
+```
+
+```{r include=FALSE}
+
+# This next function uses the aggregate function to 1) sum the total firearms seized by month for each year, and 2) run  statistics on those totals
+
+firearm_monthly_stats <- function(stat_func) {
+  firearms_month_and_year <- aggregate(total_count ~ month + year, firearm_df, sum)
+  # use aggregate function to sum total firearm seizures per month for each month in the
+  # dataframe (2015-2020). This video helped: https://www.youtube.com/watch?v=qvbUokWpKdI
+  # this is now stored as a new dataframe in a local variable
+  firearms_stats <- aggregate(total_count ~ year, firearms_month_and_year, stat_func)
+  # now that the total firearms seized per month have been summed up, call the aggregate 
+  # function again and run a user-supplied statistical function on the dataframe 
+  # created above. this will run statistics on the monthly totals for each year 2015-2020. 
+  return(firearms_stats)
+  
+}
+
+```
+```{r}
+
+firearm_monthly_stats(summary)
+
+```
+
+I went through the same steps as I did with the NICS dataframe to calculate summary statistics, variance, and standard deviations for total firearms seized per month in each year from 2015 to 2020. The table above shows the summary statistics. 
+
+From 2015 to 2019, the mean and median total firearms seized per month were relatively close (with a difference of 3 or fewer). In contrast, there is a difference of 15 between the mean and median for 2020. Additionally, 2020 has the lowest minimum and the highest maximum firearms seized per month of any year in the dataframe. All of this suggests that there has been more variation in firearms seized per month in 2020 than in preceding years. That the mean and median are so far apart compared to past years suggests that there is less of a normal distribution across months in 2020 versus 2015-2019 (which is demonstrated by the line graph). 
+
+```{r}
+
+firearm_monthly_stats(var)
+
+```
+
+The table above shows the variance of firearms seized per month for each year from 2015 to 2020. At 1757.4, there is a much higher level of variance among the 2020 values than in any other year (which means the 2020 entries include values that are much farther from the mean, compared to other years). 
+
+```{r}
+
+firearm_monthly_stats(sd)
+
+```
+
+The table above shows the standard deviation for firearms seized per month for each year from 2015 to 2020. Once again, the value calculated for 2020 is much higher than those for the preceding years, which means that the values for 2020 are more widely spread out than the values in other years. 
+
+```{r include=FALSE}
+
+cb_palette <- c("#E69F00", "#000000", "#009E73", "#D55E00","#0072B2", "#CC79A7")
+# storing the colorbline palette to a vector to use with a more complex plot below
+firearm_point <- ggplot(seizures_by_month_and_year, aes(x=month, y=total_count, 
+                                                        color=year, shape=year))
+firearm_point <- firearm_point + geom_point(size = 4) + geom_line(size = 2) +
+  # combining geom_point with geom_line to connect the dots
+  labs(title = "Monthly Firearm Seizures by Pittsburgh Bureau of Police
+(March - October Timeframe, 2015 - 2020)", 
+       x = "Month", 
+       y = "Total Firearm Seizures") +
+  scale_y_continuous(limits = c(0, 200), expand = c(0,0)) + 
+  scale_x_continuous(breaks = seq(3,10,1))+
+  # this plot treats x (month) as a continuous value, which is not want we want
+  # for the visualization, so I got this breaks=seq solution from this video 
+  # tutorial to fix it: https://www.youtube.com/watch?v=r0n_p7POzDE
+  scale_color_manual("Year", values = cb_palette) + scale_shape_discrete("Year") +
+  theme(plot.title = element_text(size = 16, face = "bold"),
+        axis.text.x = element_text(size = 14),
+        axis.title.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14),
+        axis.title.y = element_text(size = 14)) 
+# this started out as a dodged barplot but then I found and followed these 
+# instructions to do a line graph for an easier-to-follow visualization:
+# https://brandonlebeau.org/2014/08/05/dodged-bar-charts-why-not-a-line-graph/
+```
+```{r}
+firearm_point
+```
+
+This line graph shows all monthly totals for firearms seized by Pittsburgh Police, color coded by year. This shows us that the number of firearms seized by PBP was comparably low in each month from March through August 2020, with the lowest monthly total in the entire dataframe falling in April 2020 (the first month of the stay-at-home order). I know from analyzing [another WPRDC dataset](https://data.wprdc.org/dataset/arrest-data) back in DAT-102 in the spring 2020 semester that Pittsburgh Police arrest rates for all crimes were extremely low in April 2020, and I know from working for a domestic violence agency that protection from abuse filings were exceptionally low in April, too. These factors probably had an effect on the drop in firearms seized in spring/summer 2020. 
+
+This visualization also indicates that there was a huge spike in the total number of firearms seized in September 2020 compared to any other month included in the analysis. 
+
+Now, we'll narrow the analysis further, looking at firearms seized per instance to search for unusual cases. 
+
+```{r}
+
+aggregate(total_count ~ month, firearm_df[firearm_df$year == 2020,], summary)
+# returns summary statistics on the total number of firearms seized per instance throughout the 2020 timeframe
+```
+
+The table above outlines summary statistics for total firearms seized _per instance_ in each month of the 2020 timeframe. After poking around this dataset a lot, I found that, in more than half of cases where Pittsburgh Police seize firearms from an offender, only one firearm is seized. These summary statistics help to demonstrate that. 
+
+In less common cases, police seize more than one firearm from the same offender in the same instance. These summary stats revealed an extreme case in September 2020, where police seized 55 firearms from one offender. 
+
+```{r include=FALSE}
+
+bad_firearm_boxplot <- ggplot(firearm_df, aes(x=as.factor(year), y=total_count, color=year)) +
+  geom_boxplot() +
+  labs(x="Year", y="Total Firearms Seized", title = 
+"Total Firearms Seized by Pittsburgh Police per Instance by Year 
+(March-October Timeframe, 2015-2020)") +
+  theme(plot.title = element_text(size = 16, face = "bold"),
+        axis.text.x = element_text(size = 12),
+        axis.title.x = element_text(size = 14),
+        axis.text.y = element_text(size = 12),
+        axis.title.y = element_text(size = 14)) 
+bad_firearm_boxplot <- bad_firearm_boxplot + scale_color_manual(values = c("#E69F00", "#56B4E9", 
+                                            "#009E73", "#D55E00","#0072B2", "#CC79A7")) + theme_light()
+```
+```{r fig.width=8}
+
+bad_firearm_boxplot
+
+```
+
+This failed boxplot reveals that the two most significant outliers in the dataset occurred in September 2020, when it appears that there were two cases in which 44 and 55 firearms were seized at once. This explains the deceptively-high mean value and the higher variance and standard deviation calculated for the 2020 timeframe. Without these two unusual cases, the total number of firearms seized since March 2020 would have been 393, which is significantly lower than the total firearms seized in the same timeframe in the five preceding years. 
+
+## Conclusions and Areas for Further Research
+
+In short, the data available on rates of NICS background checks initiated in Pennsylvania since March 2020 suggests that rates of firearm sales are higher than ever in our state. The surges in gun sales may be attributed to widespread fear associated with the COVID-19 pandemic, the nationwide Black Lives Matter protests, and the November election. It would be interesting to continue to track this monthly to see if monthly background check rates remain at record highs as we continue to await a COVID-19 vaccine. It would also be interesting to expand the timeframe of this analysis to a full calendar year of data to look for any differences in month-to-month rates of background checks across multiple years (are there always more background checks initiated in the fall versus the spring in preparation for hunting season? Possibly!).
+
+The federal background check system has been inundated this year, and unfortunately, as a result, it is highly likely that people with criminal histories of intimate partner violence have been able to purchase firearms in 2020 despite their criminal records. This could have a negative effect on public safety in our communities. Everytown for Gun Safety explained in [an April 2020 report](https://everytownresearch.org/report/covid-default-proceed/):
+
+>The surge in gun sales puts a massive strain on the system and increases the risk that people who should be denied a gun slip through the cracks. While federal law requires licensed gun dealers to run background checks on all prospective gun buyers, due to an NRA-backed loophole in the 1993 Brady Bill, gun sales can proceed by default after three business days—even without a completed background check. Each year, this loophole, known as a “default proceed” or the “Charleston loophole,” puts thousands of firearms in the hands of people who are legally prohibited from possessing them. While most background checks are completed on the spot, typically 10 percent of all federal checks—1.2 million of the 3.7 million in March—require additional time and 3 percent are delayed longer than three days. That translates to at least 35,000 potential “default proceeds” during the March gun-buying frenzy alone. At least 523 were transferred to prohibited persons and, of those, close to a quarter went to prohibited domestic abusers.
+
+Meanwhile, local firearm seizures by Pittsburgh Police were down in the spring and summer. Regarding the two outlier cases, it is impossible to determine from this data whether any of the 99 firearms from these two cases were purchased during the pandemic months of 2020, but it would be interesting to continue to track this data to see if more cases like these two occur while PA is under restrictions related to the pandemic. In October 2020, it appears that firearm seizure rates were on par with pre-pandemic levels. However, because there has been so much variation in monthly firearm seizure rates during the pandemic, it is difficult to predict what the data will be like for November and December 2020.
+
+There have already been [reports](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7204738/) of [increases in gun violence since March 2020](https://www.medrxiv.org/content/10.1101/2020.07.02.20145508v2.full.pdf), coinciding with the surge in gun sales. In the coming months and years, studies of a possible correlation between these two factors--at national and state levels--will likely be a major area of related research on the COVID-19 pandemic era in the U.S. 
+
+
+
+
+#### **If you or someone you know is experiencing intimate partner violence:**
+
+#### 24-Hour Hotline: 412-687-8005 
+
+#### 24-Hour Text Line: 412-744-8445
+
+#### Online chat available at http://www.wcspittburgh.org
+
+
+
+
+
+
+
